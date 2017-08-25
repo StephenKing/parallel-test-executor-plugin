@@ -349,14 +349,7 @@ public class ParallelTestExecutor extends Builder {
      * Returns the primary branch of a multi-branch project, denoted by {@link jenkins.scm.api.metadata.PrimaryInstanceMetadataAction}.
      */
     private static Job<?, ?> findPrimaryBranch(MultiBranchProject<?, ?> folder) {
-        // Java 8?
-        // return folder.getItems().stream().filter(j -> j.getAction(PrimaryInstanceMetadataAction.class) != null);
-        for (Job<?, ?> j : folder.getItems()) {
-            if (j.getAction(PrimaryInstanceMetadataAction.class) != null) {
-                return j;
-            }
-        }
-        return null;
+        return folder.getItems().stream().filter(j -> j.getAction(PrimaryInstanceMetadataAction.class) != null).findFirst().orElse(null);
     }
 
     @Extension
