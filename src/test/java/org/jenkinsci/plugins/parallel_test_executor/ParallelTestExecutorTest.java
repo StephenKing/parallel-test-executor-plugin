@@ -75,27 +75,40 @@ public class ParallelTestExecutorTest {
         sampleRepo.git("add", "Jenkinsfile");
         sampleRepo.git("commit", "--all", "--message=flow");
         // create a new branch based on master
-        sampleRepo.git("branch", "dev/main");
+        sampleRepo.git("branch", "some-branch");
         // checkout a new branch that will get PrimaryInstanceMetadataAction because of it is checked out when indexing
         sampleRepo.git("checkout", "-b", "primary-branch");
 
         // create MultiBranch project "p"
-        WorkflowMultiBranchProject mp = jenkinsRule.jenkins.createProject(WorkflowMultiBranchProject.class, "p");/**/
-        mp.getSourcesList().add(new BranchSource(new GitSCMSource(null, sampleRepo.toString(), "", "*", "", false)));
+        WorkflowMultiBranchProject multiBranchProject = jenkinsRule.jenkins.createProject(WorkflowMultiBranchProject.class, "p");/**/
+        multiBranchProject.getSourcesList().add(new BranchSource(new GitSCMSource(null, sampleRepo.toString(), "", "*", "", false)));
         // indexing will automatically trigger a run for every branch
-        mp.scheduleBuild2(0).getFuture().get();
-        WorkflowJob p = mp.getItem("dev%2Fmain");
-        // MultiBranch project should have 3 items (master, dev/main, primary-branch)
-        assertEquals(3, mp.getItems().size());
+        multiBranchProject.scheduleBuild2(0).getFuture().get();
         jenkinsRule.waitUntilNoActivity();
-        WorkflowRun b1 = p.getLastBuild();
-        assertEquals(1, b1.getNumber());
+        // MultiBranch project should have 3 items (master, some-branch, primary-branch)
+        assertEquals(3, multiBranchProject.getItems().size());
 
-        // trigger dev/main job again (to be sure that primary-branch ran once before)
-        p.scheduleBuild2(0);
+        // trigger primary-branch job again (to make sure that we later pick up the latest build)
+        WorkflowJob primaryBranchJob = multiBranchProject.getItem("primary-branch");
+        // update the primary job and sneak in some test results
+        primaryBranchJob.setDefinition(new CpsFlowDefinition(
+            "node {\n" +
+                "  writeFile file: 'TEST-1.xml', text: '<testsuite name=\"one\"><testcase name=\"x\"/></testsuite>'\n" +
+                "  writeFile file: 'TEST-2.xml', text: '<testsuite name=\"two\"><testcase name=\"y\"/></testsuite>'\n" +
+                "  junit 'TEST-*.xml'\n" +
+                "}", true));
+        primaryBranchJob.scheduleBuild2(0);
         jenkinsRule.waitUntilNoActivity();
-        WorkflowRun b2 = p.getLastBuild();
-        assertEquals(2, b2.getNumber());
-        jenkinsRule.assertLogContains("Scanning primary project for test records. Starting with build p/primary-branch #1", b2);
+        assertEquals(2, primaryBranchJob.getLastBuild().getNumber());
+
+        // trigger some-branch job again
+        WorkflowJob someBranchJob = multiBranchProject.getItem("some-branch");
+        someBranchJob.scheduleBuild2(0);
+        jenkinsRule.waitUntilNoActivity();
+        WorkflowRun someBranchJobBuild2 = someBranchJob.getLastBuild();
+        assertEquals(2, someBranchJobBuild2.getNumber());
+        jenkinsRule.assertLogContains("Scanning primary project for test records. Starting with build p/primary-branch #2", someBranchJobBuild2);
+        // check that we actually pick p/primary-branch#2 because it has test results
+        jenkinsRule.assertLogContains("Using build #2 as reference", someBranchJobBuild2);
     }
 }
