@@ -281,35 +281,49 @@ public class ParallelTestExecutor extends Builder {
     }
 
     private static TestResult findPreviousTestResult(Run<?, ?> b, TaskListener listener) {
-        Job<?, ?> job = b.getParent();
-
-        for (int i = 0; i < NUMBER_OF_BUILDS_TO_SEARCH; i++) {// limit the search to a small number to avoid loading too much
-            b = b.getPreviousBuild();
-            if (b == null) break;
-            listener.getLogger().printf("Investigating build #%d as reference%n", b.getNumber());
-            if(!RESULTS_OF_BUILDS_TO_CONSIDER.contains(b.getResult())) continue;
-
-            AbstractTestResultAction tra = b.getAction(AbstractTestResultAction.class);
-            if (tra == null) continue;
-
-            Object o = tra.getResult();
-            if (o instanceof TestResult) {
-                listener.getLogger().printf("Using build #%d as reference%n", b.getNumber());
-                return (TestResult) o;
-            }
+        // start with the previous build
+        if (b.getPreviousBuild() == null) {
+            return null;
+        }
+        TestResult results = findPreviousTestResultPerBranch(b.getPreviousBuild(), listener);
+        if (results != null) {
+            // we found results
+            return results;
         }
 
         // try to find test results from the primary sibling job, if such one exists
-        if (!isPrimaryBranchJob(job)) {
-            listener.getLogger().printf("No records available for project %s.%n", job.getName());
-            Run primaryBranchBuild = getLastBuildFromPrimaryBranch(job, listener);
-            if (primaryBranchBuild != null) {
-                listener.getLogger().printf("Scanning primary project for test records. Starting with build %s.%n", primaryBranchBuild);
-                return findPreviousTestResult(primaryBranchBuild, listener);
-            } else {
-                listener.getLogger().println("No primary project or applicable build found.");
-            }
+        Job<?, ?> job = b.getParent();
+        if (isPrimaryBranchJob(job)) {
+            // we only fall back to the primary branch. If we are on that, we have no alternative
+            return null;
         }
+
+        Run primaryBranchBuild = getLastBuildFromPrimaryBranch(job, listener);
+        if (primaryBranchBuild != null) {
+            listener.getLogger().printf("Scanning primary project for test records. Starting with build %s.%n", primaryBranchBuild);
+            results = findPreviousTestResultPerBranch(primaryBranchBuild, listener);
+        }
+        return results;
+    }
+
+    private static TestResult findPreviousTestResultPerBranch(Run<?, ?> b, TaskListener listener) {
+
+        for (int i = 0; i < NUMBER_OF_BUILDS_TO_SEARCH; i++) {// limit the search to a small number to avoid loading too much
+            listener.getLogger().printf("Investigating build #%d as reference%n", b.getNumber());
+            if (RESULTS_OF_BUILDS_TO_CONSIDER.contains(b.getResult())) {
+                AbstractTestResultAction tra = b.getAction(AbstractTestResultAction.class);
+                if (tra != null) {
+                    Object o = tra.getResult();
+                    if (o instanceof TestResult) {
+                        listener.getLogger().printf("Using build #%d as reference%n", b.getNumber());
+                        return (TestResult) o;
+                    }
+                }
+            }
+            b = b.getPreviousBuild();
+            if (b == null) break;
+        }
+
         return null;    // couldn't find it
     }
 
