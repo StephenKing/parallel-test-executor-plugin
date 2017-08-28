@@ -281,16 +281,21 @@ public class ParallelTestExecutor extends Builder {
     }
 
     private static TestResult findPreviousTestResult(Run<?, ?> b, TaskListener listener) {
+        TestResult results = null;
         // start with the previous build
-        if (b.getPreviousBuild() == null) {
-            listener.getLogger().printf("No previous build available anymore.%n");
-            return null;
-        }
-        TestResult results = findPreviousTestResultPerBranch(b.getPreviousBuild(), listener);
-        if (results != null) {
-            // we found results
-            listener.getLogger().printf("Found test results on this branch after starting search from %s.%n", b.getPreviousBuild());
-            return results;
+        if (b.getPreviousBuild() != null) {
+            results = findPreviousTestResultPerBranch(b.getPreviousBuild(), listener);
+            if (results != null) {
+                // we found results
+                listener.getLogger()
+                    .printf("Found test results on this branch after starting search from %s.%n",
+                        b.getPreviousBuild());
+                return results;
+            } else {
+                listener.getLogger().printf("Found no previous test results on own branch.%n");
+            }
+        } else {
+            listener.getLogger().printf("Branch has no previous builds.%n");
         }
 
         listener.getLogger().printf("Found no previous test results on own branch.%n");
