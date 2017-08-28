@@ -281,14 +281,14 @@ public class ParallelTestExecutor extends Builder {
     }
 
     private static TestResult findPreviousTestResult(Run<?, ?> b, TaskListener listener) {
+        TestResult results = null;
         // start with the previous build
-        if (b.getPreviousBuild() == null) {
-            return null;
-        }
-        TestResult results = findPreviousTestResultPerBranch(b.getPreviousBuild(), listener);
-        if (results != null) {
-            // we found results
-            return results;
+        if (b.getPreviousBuild() != null) {
+            results = findPreviousTestResultPerBranch(b.getPreviousBuild(), listener);
+            if (results != null) {
+                // we found results
+                return results;
+            }
         }
 
         // try to find test results from the primary sibling job, if such one exists
