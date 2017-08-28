@@ -283,17 +283,22 @@ public class ParallelTestExecutor extends Builder {
     private static TestResult findPreviousTestResult(Run<?, ?> b, TaskListener listener) {
         // start with the previous build
         if (b.getPreviousBuild() == null) {
+            listener.getLogger().printf("No previous build available anymore.%n");
             return null;
         }
         TestResult results = findPreviousTestResultPerBranch(b.getPreviousBuild(), listener);
         if (results != null) {
             // we found results
+            listener.getLogger().printf("Found test results on this branch after starting search from %s.%n", b.getPreviousBuild());
             return results;
         }
+
+        listener.getLogger().printf("Found no previous test results on own branch.%n");
 
         // try to find test results from the primary sibling job, if such one exists
         Job<?, ?> job = b.getParent();
         if (isPrimaryBranchJob(job)) {
+            listener.getLogger().printf("%s is already the primary job.%n", job);
             // we only fall back to the primary branch. If we are on that, we have no alternative
             return null;
         }
@@ -302,6 +307,8 @@ public class ParallelTestExecutor extends Builder {
         if (primaryBranchBuild != null) {
             listener.getLogger().printf("Scanning primary project for test records. Starting with build %s.%n", primaryBranchBuild);
             results = findPreviousTestResultPerBranch(primaryBranchBuild, listener);
+        } else {
+            listener.getLogger().printf("Did not find a previous test result from primary branch.%n");
         }
         return results;
     }
@@ -310,6 +317,7 @@ public class ParallelTestExecutor extends Builder {
 
         for (int i = 0; i < NUMBER_OF_BUILDS_TO_SEARCH; i++) {// limit the search to a small number to avoid loading too much
             listener.getLogger().printf("Investigating build #%d as reference%n", b.getNumber());
+            listener.getLogger().printf("Investigating build %s as reference%n", b);
             if (RESULTS_OF_BUILDS_TO_CONSIDER.contains(b.getResult())) {
                 AbstractTestResultAction tra = b.getAction(AbstractTestResultAction.class);
                 if (tra != null) {
@@ -324,6 +332,7 @@ public class ParallelTestExecutor extends Builder {
             if (b == null) break;
         }
 
+        listener.getLogger().printf("Couldn't find anything starting from %s.%n", b);
         return null;    // couldn't find it
     }
 
