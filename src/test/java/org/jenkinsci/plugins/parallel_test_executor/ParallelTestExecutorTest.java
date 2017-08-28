@@ -1,9 +1,16 @@
 package org.jenkinsci.plugins.parallel_test_executor;
 
+import hudson.Extension;
 import hudson.model.FreeStyleProject;
+import jenkins.branch.BranchBuildStrategy;
+import jenkins.branch.BranchBuildStrategyDescriptor;
 import jenkins.branch.BranchSource;
 import jenkins.plugins.git.GitSCMSource;
 import jenkins.plugins.git.GitSampleRepoRule;
+import jenkins.scm.api.SCMHead;
+import jenkins.scm.api.SCMSource;
+import jenkins.scm.api.SCMSourceDescriptor;
+import net.sf.json.JSONObject;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.SnippetizerTester;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -13,9 +20,17 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
+import org.kohsuke.stapler.StaplerRequest;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+
+import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
 
 public class ParallelTestExecutorTest {
 
@@ -80,8 +95,12 @@ public class ParallelTestExecutorTest {
         sampleRepo.git("checkout", "-b", "primary-branch");
 
         // create MultiBranch project "p"
-        WorkflowMultiBranchProject multiBranchProject = jenkinsRule.jenkins.createProject(WorkflowMultiBranchProject.class, "p");/**/
-        multiBranchProject.getSourcesList().add(new BranchSource(new GitSCMSource(null, sampleRepo.toString(), "", "*", "", false)));
+        WorkflowMultiBranchProject multiBranchProject = jenkinsRule.jenkins.createProject(WorkflowMultiBranchProject.class, "p");
+        BranchSource branchSource = new BranchSource(new GitSCMSource(null, sampleRepo.toString(), "", "*", "", false));
+        ArrayList<BranchBuildStrategy> buildStrategies = new ArrayList<>();
+        buildStrategies.add(new DontBuildBranchBuildStrategy());
+        branchSource.setBuildStrategies(buildStrategies);
+        multiBranchProject.getSourcesList().add(branchSource);
         // indexing will automatically trigger a run for every branch
         multiBranchProject.scheduleBuild2(0).getFuture().get();
         jenkinsRule.waitUntilNoActivity();
