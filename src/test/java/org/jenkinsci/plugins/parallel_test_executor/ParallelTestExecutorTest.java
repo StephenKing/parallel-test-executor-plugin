@@ -1,17 +1,13 @@
 package org.jenkinsci.plugins.parallel_test_executor;
 
-import hudson.Extension;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import hudson.model.FreeStyleProject;
 import jenkins.branch.BranchBuildStrategy;
-import jenkins.branch.BranchBuildStrategyDescriptor;
 import jenkins.branch.BranchSource;
-import jenkins.branch.MultiBranchProject;
 import jenkins.plugins.git.GitSCMSource;
 import jenkins.plugins.git.GitSampleRepoRule;
-import jenkins.scm.api.SCMHead;
-import jenkins.scm.api.SCMSource;
-import jenkins.scm.api.SCMSourceDescriptor;
-import net.sf.json.JSONObject;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.cps.SnippetizerTester;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -21,17 +17,8 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.recipes.LocalData;
-import org.kohsuke.stapler.StaplerRequest;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
-import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Arrays;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nonnull;
 
 public class ParallelTestExecutorTest {
 
