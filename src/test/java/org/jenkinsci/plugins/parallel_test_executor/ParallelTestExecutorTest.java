@@ -5,6 +5,7 @@ import hudson.model.FreeStyleProject;
 import jenkins.branch.BranchBuildStrategy;
 import jenkins.branch.BranchBuildStrategyDescriptor;
 import jenkins.branch.BranchSource;
+import jenkins.branch.MultiBranchProject;
 import jenkins.plugins.git.GitSCMSource;
 import jenkins.plugins.git.GitSampleRepoRule;
 import jenkins.scm.api.SCMHead;
@@ -74,10 +75,102 @@ public class ParallelTestExecutorTest {
         jenkinsRule.assertLogContains("splits[1]: includes=true list=[two.java, two.class]", b2);
     }
 
+    @Test
+    public void multiBranchFallbackToPrimaryJobForFirstBuild() throws Exception {
+        // verifies that a first time build of a project falls back to the primary branch
+
+        // - initialize a git repo
+        // - checkout the branch "primary-branch"
+        // - add new MultiBranch project "p" to Jenkins
+        // - trigger branch indexing, but don't build branches automatically
+        // - build primary-branch#1 and let it generate test results
+        // - build test-branch#1, see it using test results from primary-branch#1
+        // - build test-branch#2, see it using test results from test-branch#1
+
+        WorkflowMultiBranchProject multiBranchProject = getMultiBranchProjectForFallbackTests();
+        WorkflowJob primaryBranch = multiBranchProject.getItem("primary-branch");
+        WorkflowJob testBranch = multiBranchProject.getItem("test-branch");
+
+        // - build primary-branch#1 and let it generate test results
+        primaryBranch.setDefinition(getPipelineScriptWithTestResults());
+        build(primaryBranch);
+        assertEquals(1, primaryBranch.getLastBuild().getNumber());
+
+        // - build test-branch#1, see it using test results from primary-branch#1
+        build(testBranch);
+        WorkflowRun testbranchBuild1 = testBranch.getLastBuild();
+        assertEquals(1, testbranchBuild1.getNumber());
+        jenkinsRule.assertLogContains("Scanning primary project for test records. Starting with build p/primary-branch #1", testbranchBuild1);
+        // check that we actually pick p/primary-branch#2 because it has test results
+        jenkinsRule.assertLogContains("Using build #1 as reference", testbranchBuild1);
+
+        // - build test-branch#2, see it using test results from test-branch#1
+        build(testBranch);
+        WorkflowRun testbranchBuild2 = testBranch.getLastBuild();
+        assertEquals(2, testbranchBuild2.getNumber());
+        jenkinsRule.assertLogContains("Scanning primary project for test records. Starting with build p/primary-branch #1", testbranchBuild2);
+        // check that we actually pick p/primary-branch#2 because it has test results
+        jenkinsRule.assertLogContains("Using build #1 as reference", testbranchBuild2);
+    }
 
     @Test
-    public void multiBranchFallbackToPrimaryJob() throws Exception {
+    public void multiBranchFallbackToPrimaryJobForSecondBuild() throws Exception {
 
+        // verifies that builds of a project with a history lacking test results falls back to the primary branch
+
+        // - initialize a git repo
+        // - checkout the branch "primary-branch"
+        // - add new MultiBranch project "p" to Jenkins
+        // - trigger branch indexing, but don't build branches automatically
+        // - build test-branch#1, see it missing test results, let it generate no test results
+        // - build primary-branch#1 and let it generate test results
+        // - build primary-branch#2 and let it generate NO test results
+        // - build test-branch#2, see it using test results from primary-branch#1, let it generate no test results
+
+        WorkflowMultiBranchProject multiBranchProject = getMultiBranchProjectForFallbackTests();
+        WorkflowJob primaryBranch = multiBranchProject.getItem("primary-branch");
+        WorkflowJob testBranch = multiBranchProject.getItem("test-branch");
+
+        // - build test-branch#1, see it missing test results, let it generate no test results
+        build(testBranch);
+        WorkflowRun testbranchBuild1 = testBranch.getLastBuild();
+        assertEquals(1, testbranchBuild1.getNumber());
+        jenkinsRule.assertLogContains("No record available, so executing everything in one place", testbranchBuild1);
+
+        // - build primary-branch#1 and let it generate test results
+        primaryBranch.setDefinition(getPipelineScriptWithTestResults());
+        build(primaryBranch);
+        assertEquals(1, primaryBranch.getLastBuild().getNumber());
+
+        // - build primary-branch#2 and let it generate NO test results
+        primaryBranch.setDefinition(new CpsFlowDefinition("echo 'no test results'", true));
+        build(primaryBranch);
+        assertEquals(2, primaryBranch.getLastBuild().getNumber());
+
+        // - build test-branch#2, see it using test results from primary-branch#1, let it generate no test results
+        build(testBranch);
+        WorkflowRun testbranchBuild2 = testBranch.getLastBuild();
+        assertEquals(2, testbranchBuild2.getNumber());
+        jenkinsRule.assertLogContains("Scanning primary project for test records. Starting with build p/primary-branch #2", testbranchBuild2);
+        // check that we actually pick p/primary-branch#2 because it has test results
+        jenkinsRule.assertLogContains("Using build #1 as reference", testbranchBuild2);
+    }
+
+    private CpsFlowDefinition getPipelineScriptWithTestResults() {
+        return new CpsFlowDefinition(
+            "node {\n" +
+                "  writeFile file: 'TEST-1.xml', text: '<testsuite name=\"one\"><testcase name=\"x\"/></testsuite>'\n" +
+                "  writeFile file: 'TEST-2.xml', text: '<testsuite name=\"two\"><testcase name=\"y\"/></testsuite>'\n" +
+                "  junit 'TEST-*.xml'\n" +
+                "}", true);
+    }
+
+    private void build(WorkflowJob project) throws Exception {
+        project.scheduleBuild2(0);
+        jenkinsRule.waitUntilNoActivity();
+    }
+
+    private WorkflowMultiBranchProject getMultiBranchProjectForFallbackTests() throws Exception {
         // create a Jenkinsfile in the master branch
         sampleRepo.init();
         String script =
@@ -90,7 +183,7 @@ public class ParallelTestExecutorTest {
         sampleRepo.git("add", "Jenkinsfile");
         sampleRepo.git("commit", "--all", "--message=flow");
         // create a new branch based on master
-        sampleRepo.git("branch", "some-branch");
+        sampleRepo.git("branch", "test-branch");
         // checkout a new branch that will get PrimaryInstanceMetadataAction because of it is checked out when indexing
         sampleRepo.git("checkout", "-b", "primary-branch");
 
@@ -104,30 +197,9 @@ public class ParallelTestExecutorTest {
         // indexing will automatically trigger a run for every branch
         multiBranchProject.scheduleBuild2(0).getFuture().get();
         jenkinsRule.waitUntilNoActivity();
-        // MultiBranch project should have 3 items (master, some-branch, primary-branch)
+        // MultiBranch project should have 3 items (master, test-branch, primary-branch)
         assertEquals(3, multiBranchProject.getItems().size());
 
-        // trigger primary-branch job again (to make sure that we later pick up the latest build)
-        WorkflowJob primaryBranchJob = multiBranchProject.getItem("primary-branch");
-        // update the primary job and sneak in some test results
-        primaryBranchJob.setDefinition(new CpsFlowDefinition(
-            "node {\n" +
-                "  writeFile file: 'TEST-1.xml', text: '<testsuite name=\"one\"><testcase name=\"x\"/></testsuite>'\n" +
-                "  writeFile file: 'TEST-2.xml', text: '<testsuite name=\"two\"><testcase name=\"y\"/></testsuite>'\n" +
-                "  junit 'TEST-*.xml'\n" +
-                "}", true));
-        primaryBranchJob.scheduleBuild2(0);
-        jenkinsRule.waitUntilNoActivity();
-        assertEquals(2, primaryBranchJob.getLastBuild().getNumber());
-
-        // trigger some-branch job again
-        WorkflowJob someBranchJob = multiBranchProject.getItem("some-branch");
-        someBranchJob.scheduleBuild2(0);
-        jenkinsRule.waitUntilNoActivity();
-        WorkflowRun someBranchJobBuild2 = someBranchJob.getLastBuild();
-        assertEquals(2, someBranchJobBuild2.getNumber());
-        jenkinsRule.assertLogContains("Scanning primary project for test records. Starting with build p/primary-branch #2", someBranchJobBuild2);
-        // check that we actually pick p/primary-branch#2 because it has test results
-        jenkinsRule.assertLogContains("Using build #2 as reference", someBranchJobBuild2);
+        return multiBranchProject;
     }
 }
